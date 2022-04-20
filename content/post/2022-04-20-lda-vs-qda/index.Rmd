@@ -1,0 +1,279 @@
+---
+title: LDA vs QDA
+author: Josh Cheema
+date: '2022-04-20'
+slug: []
+categories: []
+tags: []
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Introduction
+
+When looking at binary classification problems, a common modelling approach is logistic regression, which makes use of the logistic function to determine whether an observation belongs to one of $K$ classes. However, while logistic regression is a valid approach, alternative methods may be required. In particular, for datasets where classes are completely (or almost completely) separate. In this article, we discuss two methods that do not suffer from this class separation issue: linear discriminant analysis ("LDA") and quadratic discriminant analysis ("QDA").
+
+## Linear Discriminant Analysis
+
+The Bayes classifier assigns observations to a class, $k$, based on the predictor vector, $\textbf{X} = x = (x_{1},x_{2},...,x_{p})$, that maximises $p_{k}(x) = Pr(Y=k|\textbf{X}=x)$. By making use of Bayes theorem, we can approximate $p_{k}(x)$ by using estimates for the distribution of the elements of $\textbf{X}$ in the $k$-th class and the probability that an observation is in the $k$-th class. We denote the distribution of $\textbf{X}$ as $f_{k}(x)$ and the probability that an observation is in the $k$-th class as $Pr(Y=k)=\pi_{k}$. Applying Bayes theorem yields the following expression:
+
+\[Pr(Y=k|\textbf{X}=x) = \frac{\pi_{k}f_{k}(x)}{\sum_{l=1}^{K}\pi_{l}f_{l}(x)}\]
+
+Estimating $Pr(Y=k)$ is relatively simple as it is just the proportion of our sample training data that belongs to class $k$ so $Pr(Y=k)=\pi_{k}=\frac{n_{k}}{n}$.
+
+For LDA, in order to estimate $f_{k}(x)$, we make simplifying assumptions as follows:
+
+\begin{itemize}
+  \item $f_{k}(x)$ follows a Gaussian distribution.
+  \item Each class has its own mean $\mu_{k}$.
+  \item Each class has the same variance $\sigma_{1}^{2} = \sigma_{2}^{2} = \sigma_{k}^{2} = \sigma^{2}$.
+\end{itemize}
+
+Plugging these into the expression for $p_{k}(x)$ and taking logarithms produces the following for the case where we have only one predictor variable ($p=1$):
+
+\[\delta_{k}(x) = x\frac{\mu_{k}}{\sigma^{2}} - \frac{\mu_{k}^{2}}{2\sigma^{2}} + log(\pi_{k})\]
+
+An observation with predictor variable $x$ is assigned to the class $k$ for which $\delta_{k}(x)$ is largest.
+
+The above expression is based on the one-dimensional case where there is only one predictor variable, but we can easily extend this to the $p$-dimensional case by changing our assumption about the distribution of $f_{k}(x)$ to the multivariate Gaussian distribution. The assumptions on mean and variance are the same, with means expressed as a ($p \times 1$) vector, $\mu_{k}$, with a mean value for each predictor variable. The variances will be contained in a ($p \times p$) covariance matrix, $\Sigma$, with predictor variances on the leading diagonal and the covariance between pairs of predictor variables in the off-diagonal elements. In this case our function, $\delta_{k}(x)$, becomes:
+
+\[\delta_{k}(x) = x^{T}\Sigma^{-1}\mu_{k} - \frac{1}{2}\mu_{k}^{T}\Sigma^{-1}\mu_{k} + log(\pi_{k})\]
+
+## Quadratic Discriminant Analysis
+
+In the section on LDA, we noted our assumption that the variance-covariance matrix is constant across classes. If this holds, we would expect that the Bayes classifier decision boundary will be a linear function and the LDA model should be a good fit. However, if the covariance differs between classes, the Bayes classifier decision boundary may be quadratic (i.e. non-linear) and a QDA model may provide a better fit.
+
+QDA makes the same assumptions as LDA with respect to the distribution of $\textbf{X}$ and the mean of $\textbf{X}$ within each class but differs in assuming that each class may have a unique covariance matrix, $\Sigma_{k}$ for the predictor $\textbf{X}$.
+
+QDA Assumptions:
+
+\begin{itemize}
+  \item $f_{k}(x)$ follows a Gaussian distribution.
+  \item Each class has its own ($p \times 1$) mean vector $\mu_{k}$.
+  \item Each class has its own ($p \times p$) covariance matrix, $\Sigma_{k}$.
+\end{itemize}
+
+In the case of QDA, our function $\delta_{k}(x)$ becomes:
+
+\[\delta_{k}(x) = -\frac{1}{2}(x-\mu_{k})^{T}\Sigma_{k}^{-1}(x-\mu_{k}) - \frac{1}{2}log(|\Sigma_{k}|) + log(\pi_{k})\]
+
+Given that this expression is quadratic in $x$, we expect that this method will provide a closer approximation of the Bayes classifier for a dataset with non-constant covariance between classes.
+
+## LDA vs QDA: What happens when our assumptions aren't met?
+
+In order to illustrate the impact our assumptions have on the predictive power of the LDA and QDA methods, we simulate two datasets with $n=2000$ observations:
+
+\begin{itemize}
+  \item a dataset with constant covariance and clear separation between classes.
+  \item a dataset with non-constant covariance and overlap between classes.
+\end{itemize}
+
+We visualise the datasets in the figure below:
+
+``` {r Libraries and LDA code, include = FALSE}
+
+#Import relevant libraries
+
+library(MASS)
+library(ggplot2)
+library(gridExtra)
+library(caret)
+
+#Use functions from Q1 to generate datasets
+
+sim_bvn <- function(u_1, u_2, mu, sigma) {
+  # Extract mean, standard deviations and rho from the mu and sigma variables 
+  # passed to the function.
+  
+  mu_1 <- mu[1]
+  mu_2 <- mu[2]
+  sigma_1 <- sqrt(sigma[1,1])
+  sigma_2 <- sqrt(sigma[2,2])
+  rho <- sigma[1,2]/(sigma_1*sigma_2)
+  
+  # Start with u_1 to generate normal distribution with mean mu_1 and s.d. sigma_1
+  
+  variate_1 <- qnorm(u_1, mean = mu_1, sd = sigma_1)
+  
+  # Now we have x_1 values we can use qnorm and the distributional 
+  # result from Q1.1 to calculate x_2 values
+  
+  variate_2 <- qnorm(u_2, mean = mu_2 + ((sigma_2/sigma_1)*rho*(variate_1 - mu_1)), 
+                     sd = (1 - (rho^2))*(sigma_2^2))
+  result <- cbind(variate_1, variate_2)
+  if(nrow(result)==1) {
+    return(as.vector(result))
+  }
+  else{
+    return(result)
+  }
+}
+
+sim_bvn_mixture <- function(n, p, mu_list, sigma_list){
+  #calculate the number of variates that need to be generated for each component
+  n_per_component <- n * p
+  #create empty object to store results of for loop
+  result <- NULL
+  #iterate over length of vector p and use sim_bvn() to generate variates
+  for(i in 1:length(p)){
+    u_1 <- runif(n_per_component[i])
+    u_2 <- runif(n_per_component[i])
+    component_result <- sim_bvn(u_1, u_2, mu_list[[i]], sigma_list[[i]])
+    component_result <- cbind(component_result,i)
+    result <- rbind(result, component_result)
+  }
+  #change result type to data frame and rename columns
+  result <- as.data.frame(result)
+  colnames(result) <- c("y_1","y_2","component")
+  return(result)
+}
+
+set.seed(2345)
+
+#mixed dataset with unequal covariance matrix
+
+n <- 2000
+p <- c(0.1,0.3,0.6)
+mu_1 <- c(0,0)
+mu_2 <- c(0,0)
+mu_3 <- c(-2,-4)
+mu_list <- list(mu_1,mu_2,mu_3)
+sigma_1 <- matrix(c(1,0.7,0.7,1), byrow =TRUE, nrow =2)
+sigma_2 <- matrix(c(1,-0.95,-0.95,1), byrow =TRUE, nrow =2)
+sigma_3 <- matrix(c(0.25,0,0,4), byrow =TRUE, nrow =2)
+sigma_list <- list(sigma_1, sigma_2, sigma_3)
+
+
+unequal_cov <- sim_bvn_mixture(n, p, mu_list, sigma_list)
+
+
+#generate mixed dataset with equal covariance matrix for each class
+
+n <- 2000
+p <- c(0.1,0.3,0.6)
+mu_1 <- c(8,8)
+mu_2 <- c(0,0)
+mu_3 <- c(-8,-8)
+mu_list <- list(mu_1,mu_2,mu_3)
+sigma_1 <- matrix(c(5,0,0,4), byrow =TRUE, nrow =2)
+sigma_2 <- matrix(c(5,0,0,4), byrow =TRUE, nrow =2)
+sigma_3 <- matrix(c(5,0,0,4), byrow =TRUE, nrow =2)
+sigma_list <- list(sigma_1, sigma_2, sigma_3)
+
+equal_cov <- sim_bvn_mixture(n, p, mu_list, sigma_list)
+
+```
+
+``` {r Dataset Plot, echo = FALSE, out.width = "70%", out.height = "70%", fig.align="center"}
+
+#Plot both datasets
+par(mfrow=c(1,2))
+plot(equal_cov$y_1,equal_cov$y_2, col = equal_cov$component, xlab = "Y1", ylab = "Y2", main = "Equal Covariance")
+plot(unequal_cov$y_1,unequal_cov$y_2, col = unequal_cov$component, xlab = "Y1", ylab = "Y2", main = "Unequal Covariance")
+
+```
+First, we fit LDA and QDA models to the dataset with equal covariance by splitting the data into "Train" and "Test" portions and evaluating the model performance. In the equal covariance case, we use a relatively small number of training observations ($n_{train}=50$) to illustrate the bias-variance trade-off between LDA and QDA.
+
+``` {r LDA Fit, include = FALSE}
+
+#create training index for each data set
+train_idx_1 <- sample(n, round(0.025*n))
+train_idx_2 <- sample(n, round(0.75*n))
+
+equal_cov_train <- equal_cov[train_idx_1,]
+equal_cov_test <- equal_cov[-train_idx_1, -3]
+
+unequal_cov_train <- unequal_cov[train_idx_2,]
+unequal_cov_test <- unequal_cov[-train_idx_2, -3]
+
+#Fit LDA model to both datasets and evaluate performance
+
+LDA_equal_train <- lda(component~., data = equal_cov_train)
+
+LDA_equal_train_predict <- predict(LDA_equal_train)
+
+t1 <- table(LDA_equal_train_predict$class, equal_cov_train$component, dnn = c("Predicted", "Truth"))
+
+LDA_equal_test_predict <- predict(LDA_equal_train, equal_cov_test)
+
+t2 <- table(LDA_equal_test_predict$class, equal_cov[-train_idx_1,]$component, dnn = c("Predicted", "Truth"))
+
+#Fit LDA to unequal dataset
+
+LDA_unequal_train <- lda(component~., data = unequal_cov_train)
+
+LDA_unequal_train_predict <- predict(LDA_unequal_train)
+
+t3 <- table(LDA_unequal_train_predict$class, unequal_cov_train$component, dnn = c("Predicted", "Truth"))
+
+LDA_unequal_test_predict <- predict(LDA_unequal_train, unequal_cov_test)
+
+t4 <- table(LDA_unequal_test_predict$class, unequal_cov[-train_idx_2,]$component, dnn = c("Predicted", "Truth"))
+
+```
+``` {r QDA Fit, include = FALSE}
+
+#Fit QDA to equal dataset
+
+QDA_equal_train <- qda(component~., data = equal_cov_train)
+
+QDA_equal_train_predict <- predict(QDA_equal_train)
+
+t5 <- table(QDA_equal_train_predict$class, equal_cov_train$component, dnn = c("Predicted", "Truth"))
+
+QDA_equal_test_predict <- predict(QDA_equal_train, equal_cov_test)
+
+t6<- table(QDA_equal_test_predict$class, equal_cov[-train_idx_1,]$component, dnn = c("Predicted", "Truth"))
+
+#Fit QDA to unequal dataset
+
+QDA_unequal_train <- qda(component~., data = unequal_cov_train)
+
+QDA_unequal_train_predict <- predict(QDA_unequal_train)
+
+t7 <- table(QDA_unequal_train_predict$class, unequal_cov_train$component, dnn = c("Predicted", "Truth"))
+
+QDA_unequal_test_predict <- predict(QDA_unequal_train, unequal_cov_test)
+
+t8 <- table(QDA_unequal_test_predict$class, unequal_cov[-train_idx_2,]$component, dnn = c("Predicted", "Truth"))
+
+```
+LDA Equal Covariance Test Performance:
+``` {r LDA Equal Confusion Test, echo = FALSE}
+
+confusionMatrix(t2)$table
+
+```
+
+QDA Equal Covariance Test Performance:
+``` {r QDA Equal Confusion Test, echo = FALSE}
+
+confusionMatrix(t6)$table
+
+```
+
+In this case, we see that LDA produces an accuracy of 97.54% versus QDA which produces an accuracy of 96.41%. Given the relatively small number of training observations and the clear separation, it is likely that the increased flexibility of the QDA model has resulted in higher variance and lower overall accuracy compared to the LDA model. When visualising the dataset, we would expect that the decision boundaries would be roughly linear and therefore the improved performance of the LDA model is not surprising.
+
+Next, we look at the dataset with unequal covariance between classes and fit the LDA and QDA models.
+
+LDA Unequal Covariance Test Performance:
+``` {r LDA Unequal Confusion Test, echo = FALSE}
+
+confusionMatrix(t4)$table
+
+```
+
+QDA Unequal Covariance Test Performance:
+``` {r QDA Unequal Confusion Test, echo = FALSE}
+
+confusionMatrix(t8)$table
+
+```
+
+For this dataset, we see that the LDA model has an accuracy of 82.8% versus the QDA model which has an accuracy of 95.4%. When visualising the dataset it is clear that the optimal decision boundary is likely to be non-linear and therefore we would expect the QDA model to produce a higher accuracy in this case. 
+
+### References
+
+James, G., Witten, D., Hastie, T. & Tibshirani, R. (2021) *An Introduction to Statistical Learning*. 2nd ed. New York, NY, Springer Science+Business Media, LLC, part of Springer Nature.

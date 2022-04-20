@@ -42,12 +42,24 @@ params:
   comments: true
 
   homeInfoParams:
-      Title: "Welcome"
-      Content: >
-          Welcome to demo of hugo's theme PaperMod.
-          - **PaperMod** is a simple but fast and responsive theme with useful feature-set that enhances UX.
-          - Do give a 🌟 on Github !
-          - PaperMod is based on theme [Paper](https://github.com/nanxiaobei/hugo-paper).
+      Title: >
+        Hello 👋
+      Content: |
+          Welcome to my personal blog and portfolio site. The aim of this site is to 
+          showcase personal projects and help reinforce my understanding of general 
+          programming, machine learning and data science topics via regular blog posts 
+          \- and hopefully help other people too! 
+          
+          -
+          
+          If you spot any mistakes (there could be a few) please add a
+          comment to the relevant post and I will try to correct as soon as possible. 
+          
+          -
+          
+          Please feel free to get in touch with me via LinkedIn or view my GitHub portfolio
+          using the links provided.
+          
   
   socialIcons:
         - name: github

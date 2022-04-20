@@ -1,0 +1,75 @@
+---
+title: LDA vs QDA
+author: Josh Cheema
+date: '2022-04-20'
+slug: []
+categories: []
+tags: []
+---
+
+<script src="{{< blogdown/postref >}}index_files/header-attrs/header-attrs.js"></script>
+
+
+<div id="introduction" class="section level2">
+<h2>Introduction</h2>
+<p>When looking at binary classification problems, a common modelling approach is logistic regression, which makes use of the logistic function to determine whether an observation belongs to one of <span class="math inline">\(K\)</span> classes. However, while logistic regression is a valid approach, alternative methods may be required. In particular, for datasets where classes are completely (or almost completely) separate. In this article, we discuss two methods that do not suffer from this class separation issue: linear discriminant analysis (“LDA”) and quadratic discriminant analysis (“QDA”).</p>
+</div>
+<div id="linear-discriminant-analysis" class="section level2">
+<h2>Linear Discriminant Analysis</h2>
+<p>The Bayes classifier assigns observations to a class, <span class="math inline">\(k\)</span>, based on the predictor vector, <span class="math inline">\(\textbf{X} = x = (x_{1},x_{2},...,x_{p})\)</span>, that maximises <span class="math inline">\(p_{k}(x) = Pr(Y=k|\textbf{X}=x)\)</span>. By making use of Bayes theorem, we can approximate <span class="math inline">\(p_{k}(x)\)</span> by using estimates for the distribution of the elements of <span class="math inline">\(\textbf{X}\)</span> in the <span class="math inline">\(k\)</span>-th class and the probability that an observation is in the <span class="math inline">\(k\)</span>-th class. We denote the distribution of <span class="math inline">\(\textbf{X}\)</span> as <span class="math inline">\(f_{k}(x)\)</span> and the probability that an observation is in the <span class="math inline">\(k\)</span>-th class as <span class="math inline">\(Pr(Y=k)=\pi_{k}\)</span>. Applying Bayes theorem yields the following expression:</p>
+<p><span class="math display">\[Pr(Y=k|\textbf{X}=x) = \frac{\pi_{k}f_{k}(x)}{\sum_{l=1}^{K}\pi_{l}f_{l}(x)}\]</span></p>
+<p>Estimating <span class="math inline">\(Pr(Y=k)\)</span> is relatively simple as it is just the proportion of our sample training data that belongs to class <span class="math inline">\(k\)</span> so <span class="math inline">\(Pr(Y=k)=\pi_{k}=\frac{n_{k}}{n}\)</span>.</p>
+<p>For LDA, in order to estimate <span class="math inline">\(f_{k}(x)\)</span>, we make simplifying assumptions as follows:</p>
+<p>Plugging these into the expression for <span class="math inline">\(p_{k}(x)\)</span> and taking logarithms produces the following for the case where we have only one predictor variable (<span class="math inline">\(p=1\)</span>):</p>
+<p><span class="math display">\[\delta_{k}(x) = x\frac{\mu_{k}}{\sigma^{2}} - \frac{\mu_{k}^{2}}{2\sigma^{2}} + log(\pi_{k})\]</span></p>
+<p>An observation with predictor variable <span class="math inline">\(x\)</span> is assigned to the class <span class="math inline">\(k\)</span> for which <span class="math inline">\(\delta_{k}(x)\)</span> is largest.</p>
+<p>The above expression is based on the one-dimensional case where there is only one predictor variable, but we can easily extend this to the <span class="math inline">\(p\)</span>-dimensional case by changing our assumption about the distribution of <span class="math inline">\(f_{k}(x)\)</span> to the multivariate Gaussian distribution. The assumptions on mean and variance are the same, with means expressed as a (<span class="math inline">\(p \times 1\)</span>) vector, <span class="math inline">\(\mu_{k}\)</span>, with a mean value for each predictor variable. The variances will be contained in a (<span class="math inline">\(p \times p\)</span>) covariance matrix, <span class="math inline">\(\Sigma\)</span>, with predictor variances on the leading diagonal and the covariance between pairs of predictor variables in the off-diagonal elements. In this case our function, <span class="math inline">\(\delta_{k}(x)\)</span>, becomes:</p>
+<p><span class="math display">\[\delta_{k}(x) = x^{T}\Sigma^{-1}\mu_{k} - \frac{1}{2}\mu_{k}^{T}\Sigma^{-1}\mu_{k} + log(\pi_{k})\]</span></p>
+</div>
+<div id="quadratic-discriminant-analysis" class="section level2">
+<h2>Quadratic Discriminant Analysis</h2>
+<p>In the section on LDA, we noted our assumption that the variance-covariance matrix is constant across classes. If this holds, we would expect that the Bayes classifier decision boundary will be a linear function and the LDA model should be a good fit. However, if the covariance differs between classes, the Bayes classifier decision boundary may be quadratic (i.e. non-linear) and a QDA model may provide a better fit.</p>
+<p>QDA makes the same assumptions as LDA with respect to the distribution of <span class="math inline">\(\textbf{X}\)</span> and the mean of <span class="math inline">\(\textbf{X}\)</span> within each class but differs in assuming that each class may have a unique covariance matrix, <span class="math inline">\(\Sigma_{k}\)</span> for the predictor <span class="math inline">\(\textbf{X}\)</span>.</p>
+<p>QDA Assumptions:</p>
+<p>In the case of QDA, our function <span class="math inline">\(\delta_{k}(x)\)</span> becomes:</p>
+<p><span class="math display">\[\delta_{k}(x) = -\frac{1}{2}(x-\mu_{k})^{T}\Sigma_{k}^{-1}(x-\mu_{k}) - \frac{1}{2}log(|\Sigma_{k}|) + log(\pi_{k})\]</span></p>
+<p>Given that this expression is quadratic in <span class="math inline">\(x\)</span>, we expect that this method will provide a closer approximation of the Bayes classifier for a dataset with non-constant covariance between classes.</p>
+</div>
+<div id="lda-vs-qda-what-happens-when-our-assumptions-arent-met" class="section level2">
+<h2>LDA vs QDA: What happens when our assumptions aren’t met?</h2>
+<p>In order to illustrate the impact our assumptions have on the predictive power of the LDA and QDA methods, we simulate two datasets with <span class="math inline">\(n=2000\)</span> observations:</p>
+<p>We visualise the datasets in the figure below:</p>
+<p><img src="{{< blogdown/postref >}}index_files/figure-html/Dataset%20Plot-1.png" width="70%" height="70%" style="display: block; margin: auto;" />
+First, we fit LDA and QDA models to the dataset with equal covariance by splitting the data into “Train” and “Test” portions and evaluating the model performance. In the equal covariance case, we use a relatively small number of training observations (<span class="math inline">\(n_{train}=50\)</span>) to illustrate the bias-variance trade-off between LDA and QDA.</p>
+<p>LDA Equal Covariance Test Performance:</p>
+<pre><code>##          Truth
+## Predicted    1    2    3
+##         1  193    8    0
+##         2    4  553   14
+##         3    0   22 1156</code></pre>
+<p>QDA Equal Covariance Test Performance:</p>
+<pre><code>##          Truth
+## Predicted    1    2    3
+##         1  168    5    0
+##         2   29  555   13
+##         3    0   23 1157</code></pre>
+<p>In this case, we see that LDA produces an accuracy of 97.54% versus QDA which produces an accuracy of 96.41%. Given the relatively small number of training observations and the clear separation, it is likely that the increased flexibility of the QDA model has resulted in higher variance and lower overall accuracy compared to the LDA model. When visualising the dataset, we would expect that the decision boundaries would be roughly linear and therefore the improved performance of the LDA model is not surprising.</p>
+<p>Next, we look at the dataset with unequal covariance between classes and fit the LDA and QDA models.</p>
+<p>LDA Unequal Covariance Test Performance:</p>
+<pre><code>##          Truth
+## Predicted   1   2   3
+##         1   0   0   0
+##         2  54 134   9
+##         3  11  12 280</code></pre>
+<p>QDA Unequal Covariance Test Performance:</p>
+<pre><code>##          Truth
+## Predicted   1   2   3
+##         1  49   0   2
+##         2   9 145   4
+##         3   7   1 283</code></pre>
+<p>For this dataset, we see that the LDA model has an accuracy of 82.8% versus the QDA model which has an accuracy of 95.4%. When visualising the dataset it is clear that the optimal decision boundary is likely to be non-linear and therefore we would expect the QDA model to produce a higher accuracy in this case.</p>
+<div id="references" class="section level3">
+<h3>References</h3>
+<p>James, G., Witten, D., Hastie, T. &amp; Tibshirani, R. (2021) <em>An Introduction to Statistical Learning</em>. 2nd ed. New York, NY, Springer Science+Business Media, LLC, part of Springer Nature.</p>
+</div>
+</div>
