@@ -1,0 +1,133 @@
+---
+title: 'Spatial Data: Adjusting the Boston Housing dataset'
+author: Josh Cheema
+date: '2022-04-25'
+slug: []
+categories:
+  - Data Analysis & Visualisation
+tags:
+  - Maps
+  - Choropleth
+  - Google
+  - Tidyverse
+  - ggmap
+  - spData
+  - Spatial Data
+---
+
+<script src="{{< blogdown/postref >}}index_files/header-attrs/header-attrs.js"></script>
+
+
+<p>The original Boston Housing dataset contains U.S. Census data for the Greater Boston area in 1970, including metrics such as median value of owner-occupied housing, per capita crime rate and nitric oxide concentration for each census tract (a small collection of houses defined for the census). The corrected Boston Housing dataset includes the original variables with corrections for errors and additional spatial data for each tract such as longitude, latitude and the name of the town in which each tract is located. In this article we will be using the corrected Boston Housing dataset to visualise errors in the spatial data and make appropriate adjustments. The <code>spData</code> package in R contains this dataset under the name <code>boston.c</code> - further information on the dataset including the source file can be found <a href="https://jakubnowosad.com/spData/reference/boston.html">here</a>.</p>
+<p>We will also be using the <code>ggmap</code> package to visualise the spatial data using the Google Maps API and the <code>tidyverse</code> package to prepare dataframes for visualisation.</p>
+<p>The code block below loads the relevant packages and dataset and makes some minor adjustments for misspellings and to aid geocoding the coordinates for each town center via the Google Maps API:</p>
+<pre class="r"><code># Load relevant packages
+
+library(spData)
+library(tidyverse)
+library(ggmap)
+
+# Load Boston Housing dataset
+
+BostonHousing &lt;- data.frame(spData::boston.c)
+
+# Correct naming error by changing &quot;Sargus&quot; to &quot;Saugus&quot;
+
+BostonHousing &lt;- BostonHousing %&gt;%
+  mutate(TOWN = as.character(TOWN)) %&gt;%
+  mutate(TOWN = replace(TOWN, TOWN == &quot;Sargus&quot;, &quot;Saugus&quot;))
+
+# Add MA, USA to each town name to aid Google Maps location
+
+BostonHousing &lt;- BostonHousing %&gt;%
+  mutate(TOWN = paste0(TOWN, &quot;, MA, USA&quot;))
+
+head(BostonHousing[1:4,])</code></pre>
+<pre><code>##                  TOWN TOWNNO TRACT     LON     LAT MEDV CMEDV    CRIM ZN INDUS
+## 1     Nahant, MA, USA      0  2011 -70.955 42.2550 24.0  24.0 0.00632 18  2.31
+## 2 Swampscott, MA, USA      1  2021 -70.950 42.2875 21.6  21.6 0.02731  0  7.07
+## 3 Swampscott, MA, USA      1  2022 -70.936 42.2830 34.7  34.7 0.02729  0  7.07
+## 4 Marblehead, MA, USA      2  2031 -70.928 42.2930 33.4  33.4 0.03237  0  2.18
+##   CHAS   NOX    RM  AGE    DIS RAD TAX PTRATIO      B LSTAT
+## 1    0 0.538 6.575 65.2 4.0900   1 296    15.3 396.90  4.98
+## 2    0 0.469 6.421 78.9 4.9671   2 242    17.8 396.90  9.14
+## 3    0 0.469 7.185 61.1 4.9671   2 242    17.8 392.83  4.03
+## 4    0 0.458 6.998 45.8 6.0622   3 222    18.7 394.63  2.94</code></pre>
+<p>Now that we have prepared the dataset, we can visualise the coordinates for each census tract without any adjustments:</p>
+<pre class="r"><code># Select town names and census tract coordinates from the original dataset
+
+OrigLocations &lt;- BostonHousing %&gt;%
+  select(TOWN, LON, LAT)
+
+# Get Boston map from Google Maps API
+
+AverageLON &lt;- mean(OrigLocations$LON) # Calculate average longitude
+AverageLAT &lt;- mean(OrigLocations$LAT) # Calculate average latitude
+
+center_loc &lt;- c(lon = AverageLON, lat = AverageLAT) # Combine averages for center point
+
+map &lt;- get_map(location = center_loc) # Source map data from Google API
+
+# Show Boston map and original tract locations
+
+ggmap(map) +
+  geom_point(data = OrigLocations, 
+             aes(x = LON, 
+                 y = LAT, 
+                 col = TOWN), 
+             alpha = 0.6) +
+  theme(legend.position = &quot;none&quot;)</code></pre>
+<p><img src="{{< blogdown/postref >}}index_files/figure-html/map%20existing%20coordinates-1.png" width="672" /></p>
+<p>From the above visualisation, it appears that several of the tract locations are in water, rather than on land, and therefore we conclude that the values for longitude and latitude in the dataset are incorrect! To determine the nature of this error, we visualise the town center locations using coordinates obtained via the Google Maps geocoding API tool for the name of each town.</p>
+<pre class="r"><code># Obtain data frame with name of each individual town
+
+Towns &lt;- BostonHousing %&gt;%
+  select(TOWN) %&gt;%
+  distinct()
+
+# Obtain town centre geocodes from Google
+
+TownLocation &lt;- ggmap::mutate_geocode(Towns, 
+                                      location = TOWN, 
+                                      output = &quot;latlon&quot;)
+
+AverageLON2 &lt;- mean(TownLocation$lon)
+AverageLAT2 &lt;- mean(TownLocation$lat)
+
+center_loc2 &lt;- c(lon = AverageLON2, lat = AverageLAT2)
+
+map2 &lt;- get_map(location = center_loc2)
+
+ggmap(map2) +
+  geom_point(data = TownLocation, 
+             aes(x = lon, 
+                 y = lat,
+                 fill = TOWN),
+             shape = 23) +
+  theme(legend.position = &quot;none&quot;)</code></pre>
+<p><img src="{{< blogdown/postref >}}index_files/figure-html/show%20correct%20town%20center%20locations-1.png" width="672" /></p>
+<p>This visualisation suggests that there is some kind of offset between the “true” town center locations and the tract locations implied by the dataset. In order to correct for this offset, we will need to calculate the centroids of tracts within the same town in the unadjusted dataset. Then we will be able to determine the distance from this incorrect centroid and each tract and, finally, we will use the distances and the correct town center locations from the Google Maps API to calculate the true location of each tract.</p>
+<p>Where centroid is defined as below for a finite set of <span class="math inline">\(k\)</span> points <span class="math inline">\(\mathbf{x}_{1}, \mathbf{x}_{2},..., \mathbf{x}_{k}\)</span> in <span class="math inline">\(\mathbb{R}^n\)</span>:</p>
+<p><span class="math display">\[ \mathbf{C} = \frac{\mathbf{x}_{1} + \mathbf{x}_{2} + ... + \mathbf{x}_{k}}{k}\]</span></p>
+<p>i.e. the centroid will be a two-dimensional vector representing the average of the longitude (<span class="math inline">\(x\)</span> coordinate) and latitude (<span class="math inline">\(y\)</span> coordinate) values.</p>
+<p><img src="{{< blogdown/postref >}}index_files/figure-html/correct%20centroids-1.png" width="672" /></p>
+<p>The above visualisation shows the corrected tract locations, which are aligned with the town center locations obtained via the Google geocoding API.</p>
+<p>Now that we have the corrected locations, we can use aesthetics to show how other variables in the dataset vary with location, such as the correct median value of owner-occupied housing, as below:</p>
+<pre class="r"><code>CorrectCentroids &lt;- bind_cols(CorrectCentroids, CMEDV = BostonHousing$CMEDV)
+
+ggmap(map2) +
+  geom_point(data = CorrectCentroids, 
+             aes(x = TRUE_LON, 
+                 y = TRUE_LAT,
+                 col = CMEDV),
+             alpha = 0.6) +
+  scale_colour_gradient(low = &quot;white&quot;, high = &quot;blue&quot;)</code></pre>
+<p><img src="{{< blogdown/postref >}}index_files/figure-html/conditional%20fill%20on%20median%20income-1.png" width="672" /></p>
+<p>Thus we have corrected the Boston Housing spatial data and highlighted the power of the <code>tidyverse</code> and <code>ggmap</code> packages combined with the Google Maps API. The <code>ggmaps</code> package can also source map data from other sources such as Stamen Maps and vary map types to show satellite, terrain and road maps (among others).</p>
+<div id="references" class="section level2">
+<h2>References</h2>
+<p>D. Kahle and H. Wickham. <em>ggmap: Spatial Visualization with ggplot2</em>. The R Journal, 5(1), 144-161. URL <a href="http://journal.r-project.org/archive/2013-1/kahle-wickham.pdf" class="uri">http://journal.r-project.org/archive/2013-1/kahle-wickham.pdf</a>.</p>
+<p>Bivand R, Nowosad J, Lovelace R (2022). <em>spData: Datasets for Spatial Analysis</em>. R package version 2.0.1, <a href="https://jakubnowosad.com/spData/" class="uri">https://jakubnowosad.com/spData/</a>.</p>
+<p>Wickham et al., (2019). <em>Welcome to the tidyverse</em>. Journal of Open Source Software, 4(43), 1686, <a href="https://doi.org/10.21105/joss.01686" class="uri">https://doi.org/10.21105/joss.01686</a>.</p>
+<p>Source for map and town center location data: Google Maps Platform. Maps Static API and Geocoding API. <a href="https://mapsplatform.google.com/maps-products/" class="uri">https://mapsplatform.google.com/maps-products/</a>.</p>
+</div>

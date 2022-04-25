@@ -1,0 +1,202 @@
+---
+title: 'Spatial Data: Adjusting the Boston Housing dataset'
+author: Josh Cheema
+date: '2022-04-25'
+slug: []
+categories:
+  - Data Analysis & Visualisation
+tags:
+  - Maps
+  - Choropleth
+  - Google
+  - Tidyverse
+  - ggmap
+  - spData
+  - Spatial Data
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, 
+                      results = "hide", 
+                      message = FALSE, 
+                      warning = FALSE, 
+                      error = FALSE)
+
+```
+
+The original Boston Housing dataset contains U.S. Census data for the Greater Boston area in 1970, including metrics such as median value of owner-occupied housing, per capita crime rate and nitric oxide concentration for each census tract (a small collection of houses defined for the census). The corrected Boston Housing dataset includes the original variables with corrections for errors and additional spatial data for each tract such as longitude, latitude and the name of the town in which each tract is located. In this article we will be using the corrected Boston Housing dataset to visualise errors in the spatial data and make appropriate adjustments. The `spData` package in R contains this dataset under the name `boston.c` - further information on the dataset including the source file can be found [here](https://jakubnowosad.com/spData/reference/boston.html).
+
+We will also be using the `ggmap` package to visualise the spatial data using the Google Maps API and the `tidyverse` package to prepare dataframes for visualisation.
+
+The code block below loads the relevant packages and dataset and makes some minor adjustments for misspellings and to aid geocoding the coordinates for each town center via the Google Maps API:
+
+
+``` {r town centre locations, results = 'show'}
+
+# Load relevant packages
+
+library(spData)
+library(tidyverse)
+library(ggmap)
+
+# Load Boston Housing dataset
+
+BostonHousing <- data.frame(spData::boston.c)
+
+# Correct naming error by changing "Sargus" to "Saugus"
+
+BostonHousing <- BostonHousing %>%
+  mutate(TOWN = as.character(TOWN)) %>%
+  mutate(TOWN = replace(TOWN, TOWN == "Sargus", "Saugus"))
+
+# Add MA, USA to each town name to aid Google Maps location
+
+BostonHousing <- BostonHousing %>%
+  mutate(TOWN = paste0(TOWN, ", MA, USA"))
+
+head(BostonHousing[1:4,])
+
+```
+
+Now that we have prepared the dataset, we can visualise the coordinates for each census tract without any adjustments:
+
+``` {r map existing coordinates, echo = TRUE}
+
+# Select town names and census tract coordinates from the original dataset
+
+OrigLocations <- BostonHousing %>%
+  select(TOWN, LON, LAT)
+
+# Get Boston map from Google Maps API
+
+AverageLON <- mean(OrigLocations$LON) # Calculate average longitude
+AverageLAT <- mean(OrigLocations$LAT) # Calculate average latitude
+
+center_loc <- c(lon = AverageLON, lat = AverageLAT) # Combine averages for center point
+
+map <- get_map(location = center_loc) # Source map data from Google API
+
+# Show Boston map and original tract locations
+
+ggmap(map) +
+  geom_point(data = OrigLocations, 
+             aes(x = LON, 
+                 y = LAT, 
+                 col = TOWN), 
+             alpha = 0.6) +
+  theme(legend.position = "none")
+
+
+```
+
+From the above visualisation, it appears that several of the tract locations are in water, rather than on land, and therefore we conclude that the values for longitude and latitude in the dataset are incorrect! To determine the nature of this error, we visualise the town center locations using coordinates obtained via the Google Maps geocoding API tool for the name of each town.
+
+``` {r show correct town center locations, echo = TRUE}
+
+# Obtain data frame with name of each individual town
+
+Towns <- BostonHousing %>%
+  select(TOWN) %>%
+  distinct()
+
+# Obtain town centre geocodes from Google
+
+TownLocation <- ggmap::mutate_geocode(Towns, 
+                                      location = TOWN, 
+                                      output = "latlon")
+
+AverageLON2 <- mean(TownLocation$lon)
+AverageLAT2 <- mean(TownLocation$lat)
+
+center_loc2 <- c(lon = AverageLON2, lat = AverageLAT2)
+
+map2 <- get_map(location = center_loc2)
+
+ggmap(map2) +
+  geom_point(data = TownLocation, 
+             aes(x = lon, 
+                 y = lat,
+                 fill = TOWN),
+             shape = 23) +
+  theme(legend.position = "none")
+
+
+```
+
+This visualisation suggests that there is some kind of offset between the "true" town center locations and the tract locations implied by the dataset. In order to correct for this offset, we will need to calculate the centroids of tracts within the same town in the unadjusted dataset. Then we will be able to determine the distance from this incorrect centroid and each tract and, finally, we will use the distances and the correct town center locations from the Google Maps API to calculate the true location of each tract.
+
+Where centroid is defined as below for a finite set of $k$ points $\mathbf{x}_{1}, \mathbf{x}_{2},..., \mathbf{x}_{k}$ in $\mathbb{R}^n$:
+
+\[ \mathbf{C} = \frac{\mathbf{x}_{1} + \mathbf{x}_{2} + ... + \mathbf{x}_{k}}{k}\]
+
+i.e. the centroid will be a two-dimensional vector representing the average of the longitude ($x$ coordinate) and latitude ($y$ coordinate) values.
+
+``` {r correct centroids, echo = FALSE}
+
+# Compute centroids of the incorrect locations and distances from centroid in
+# each town.
+
+IncorrectCentroids <- OrigLocations %>% 
+  group_by(TOWN) %>%
+  mutate(centroid_lon = mean(LON), 
+         centroid_lat = mean(LAT)) %>%
+  mutate(centroid_lon_dist = LON - centroid_lon, 
+         centroid_lat_dist = LAT - centroid_lat)
+
+# Extract distances and add to correct town center coordinates to obtain
+# corrected location for each tract
+
+CorrectCentroids <- IncorrectCentroids %>%
+  select(TOWN, 
+         centroid_lon_dist, 
+         centroid_lat_dist) %>%
+  group_by(TOWN) %>%
+  left_join(., TownLocation, 
+            by = c("TOWN" = "TOWN")) %>%
+  mutate(TRUE_LON = lon + centroid_lon_dist, 
+         TRUE_LAT = lat + centroid_lat_dist)
+  
+ggmap(map2) +
+  geom_point(data = CorrectCentroids, 
+             aes(x = TRUE_LON, 
+                 y = TRUE_LAT,
+                 col = TOWN),
+             alpha = 0.6) +
+  theme(legend.position = "none")
+
+
+```
+
+The above visualisation shows the corrected tract locations, which are aligned with the town center locations obtained via the Google geocoding API.
+
+Now that we have the corrected locations, we can use aesthetics to show how other variables in the dataset vary with location, such as the correct median value of owner-occupied housing, as below:
+
+``` {r conditional fill on median income}
+
+CorrectCentroids <- bind_cols(CorrectCentroids, CMEDV = BostonHousing$CMEDV)
+
+ggmap(map2) +
+  geom_point(data = CorrectCentroids, 
+             aes(x = TRUE_LON, 
+                 y = TRUE_LAT,
+                 col = CMEDV),
+             alpha = 0.6) +
+  scale_colour_gradient(low = "white", high = "blue")
+
+```
+
+Thus we have corrected the Boston Housing spatial data and highlighted the power of the `tidyverse` and `ggmap` packages combined with the Google Maps API. The `ggmaps` package can also source map data from other sources such as Stamen Maps and vary map types to show satellite, terrain and road maps (among others).
+
+## References
+
+D. Kahle and H. Wickham. *ggmap: Spatial Visualization with ggplot2*. The R Journal, 5(1), 144-161. URL http://journal.r-project.org/archive/2013-1/kahle-wickham.pdf.
+
+Bivand R, Nowosad J, Lovelace R (2022). *spData: Datasets for Spatial Analysis*. R package version 2.0.1, https://jakubnowosad.com/spData/.
+
+Wickham et al., (2019). *Welcome to the tidyverse*. Journal of Open Source Software, 4(43), 1686, https://doi.org/10.21105/joss.01686.
+
+Source for map and town center location data: Google Maps Platform. Maps Static API and Geocoding API. https://mapsplatform.google.com/maps-products/.
+
+
+
+
