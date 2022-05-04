@@ -1,0 +1,298 @@
+---
+title: "Clustering: PCA vs t-SNE on the Fashion MNIST dataset"
+author: Josh Cheema
+date: '2022-04-26'
+slug: []
+categories:
+  - Data Analysis & Visualisation
+tags:
+  - Classification
+  - Dimension Reduction
+output:
+  html_document:
+    fig_caption: yes
+---
+
+```{r setup, include = FALSE}
+
+knitr::opts_chunk$set(echo = TRUE, 
+                      message = FALSE, 
+                      warning = FALSE, 
+                      results = 'hide',
+                      error = FALSE)
+
+```
+
+## Principal Component Analysis
+
+Recently I've been working on projects involving high-dimensional datasets with hundreds or thousands of variables, which naturally led me to dimension reduction techniques to better visualise and model the data (e.g. cluster analysis). The first port of call for most people will be Principal Component Analysis ("PCA"). In simple terms, PCA determines the directions (principal components) in which the data varies the most by decomposing the sample covariance matrix, $S$, into its eigenvectors and eigenvalues. For $j=1,..,p$, the $j$-th principal component is defined to be the eigenvector associated with the $j$-th largest eigenvalue of $S$, with principal components being orthogonal to each other. The principal components are therefore arranged in order of the amount of variance explained and we can visualise the number of principal components required to explain a significant level of variance in the data. From a human perspective, this is most helpful if a large portion of the variance can be explained by 2 or 3 principal components, allowing us to easily visualise the data and any patterns. However, as long as the number of principal components required is less than the number of dimensions of the original dataset the application of machine learning algorithms becomes less computationally expensive. The orthogonality of the principal components also helps avoid issues with multicollinearity in the dataset. In addition, given the principal components will be linear combinations of variables in the original dataset, we also perform a form of feature selection as the principal components explaining the majority of the variance will assign a higher weight to the original variables that explain the majority of the variation in the original dataset.
+
+To illustrate PCA in action, we will use a subset of the Fashion MNIST dataset which is a collection of digital images of fashion items. Each image is comprised of 784 pixels (arranged in 28 $\times$ 28 pixel arrays) with each pixel corresponding to a grayscale integer value between 0 and 255, where 0 is white and 255 is black. We will be loading a subset (2000 observations) of the MNIST data which can be downloaded from [Kaggle](https://www.kaggle.com/datasets/zalando-research/fashionmnist). The dataset also includes a numeric 'label' variable and we will add a further 'item' variable to include a text description of the item type. We can therefore consider our dataframe with pixel data and a single label variable as having $(n \times p)$ dimensions where $n = 2000$ and $p=785$.
+
+``` {r load-MNIST-data, fig.cap = "Visualisation of Fashion MNIST images without dimension reduction"}
+
+library(tidyverse)
+
+# Load Fashion MNIST training dataset downloaded 
+# from https://www.kaggle.com/datasets/zalando-research/fashionmnist
+
+fashion_mnist <- read_csv("~/Datasets/Fashion_MNIST/fashion-mnist_train.csv")
+
+# We will take 2000 observations from the 'train' data
+
+set.seed(123)
+sample_id <- sample(nrow(fashion_mnist), 2000)
+
+# Select samples from original dataset
+
+fashion_mnist <- fashion_mnist[sample_id,]
+
+# Set labels as factor type
+
+fashion_mnist$label <- as.factor(fashion_mnist$label)
+
+# Convert pixel values based on scale between 0 and 1
+
+fashion_mnist[,2:ncol(fashion_mnist)] <- fashion_mnist[,2:ncol(fashion_mnist)]/255
+
+# Add Item variable with description of item type
+
+fashion_mnist <- fashion_mnist %>%
+  mutate(Item = case_when(
+    label == 0 ~ "T-shirt",
+    label == 1 ~ "Trouser",
+    label == 2 ~ "Pullover",
+    label == 3 ~ "Dress",
+    label == 4 ~ "Coat",
+    label == 5 ~ "Sandal",
+    label == 6 ~ "Shirt",
+    label == 7 ~ "Sneaker",
+    label == 8 ~ "Bag",
+    label == 9 ~ "Boot"))
+
+# Define a function to visualise the images
+
+view <- function(data){
+  view_df <- data[1:9,] %>% # Select first 9 entries as an example
+    mutate(img_id = row_number()) %>% # Create image id variable to track order in dataset
+    pivot_longer(cols = starts_with("pixel"), # Pivot table longer based on pixel values
+                 names_to = "pixel", 
+                 names_prefix = "pixel", 
+                 values_to = "value") %>%
+    arrange(pixel) %>% # Sort pixels in order so pixel numbers are grouped rather than label/item
+    mutate(pixel = as.numeric(pixel) - 1, # Add x and y variables to show location of pixel value in 2D space
+           x = pixel %% 28,
+           y = 28 - (pixel %/% 28))
+
+  ggplot(view_df, aes(x = x, y = y, fill = value)) +
+    geom_tile() + # geom_tile for visualisation
+    facet_wrap(vars(img_id, Item), labeller = "label_both") + # facet on image id and Item type
+    scale_fill_gradient(low = "white", high = "black") + # use white to black colour gradient
+    coord_fixed() + # fix ratio between units on x and y axes
+    theme(legend.position = "none") # remove legend
+}
+
+view(fashion_mnist) # visualise selection of original images
+
+```
+In Figure \@ref(fig:load-MNIST-data) above, we see the visualisation of 9 images from the Fashion MNIST sample dataset involving all 784 pixel variables that gives us a clear picture of the original items. We now apply PCA to see if we can get a similarly good picture for these items using a fraction of the number of dimensions (i.e. significantly lower than the 784 pixel variables used to generate Figure \@ref(fig:load-MNIST-data)).
+
+In R, we will use the `prcomp` function which applies singular value decomposition to calculate the eigenvalues and eigenvectors of the covariance matrix, $S$. 
+
+``` {r pca-analysis, fig.cap = "Fashion MNIST: Variance explained vs number of principal components"}
+
+# Perform PCA analysis on numeric data (after removing label and Item variables)
+fashion_pca <- prcomp(fashion_mnist %>% select(-label, -Item))
+
+# Calculate total variance for all principal components
+total_variance <- sum(fashion_pca$sdev^2)
+
+# Calculate cumulative sum of variance as each principal component is added
+pc_variance <- cumsum(fashion_pca$sdev^2)
+
+# Ratio of variance explained by n principal components to total variance
+variance_explained <- pc_variance/total_variance
+
+# Create dataframe for visualisation
+pc_df <- data.frame(PC_num = 1:length(variance_explained), variance_explained)
+
+# Visualise variance explained
+ggplot(pc_df, aes(x = PC_num, y = variance_explained)) +
+  geom_line() +
+  geom_point() +
+  scale_x_continuous(breaks = seq.int(0, max(pc_df$PC_num), by = 100)) +
+  scale_y_continuous(breaks = seq(0,1,by = 0.1))
+
+```
+
+Figure \@ref(fig:pca-analysis) shows the cumulative percentage of variance that is explained by the first $n$ principal components (i.e. how much of the variance in the original dataset is explained by the first $n$ principal compoenents). Based on Figure \@ref(fig:pca-analysis), we can see that approximately 95% of the variance is explained by the first 200 principal components and approximately 100% of the variance is explained by the first 400 principal components. Therefore, compared to the 784 variables in the original dataset, we can reduce the number of variables by slightly less than 75% and still explain 95% of the variance of the data! 
+
+To illustrate that the vast majority of the variance is still explained by the first 200 principal components, Figure \@ref(fig:pca-visualisation) shows the same visualisation as Figure \@ref(fig:load-MNIST-data) using only the first 200 principal components rather than all 784 variables in the original dataset. In order to create the 784 values for each pixel in Figure \@ref(fig:pca-visualisation), we need to approximate the original data from the principal components based on the below formula:
+
+\[ X \approx \bar{X} + (X - \bar{X})UU^{T}  \]
+
+where $\bar{X}$ is the $(n \times p)$ matrix of column means for the original pixel data $X$ and $U$ is the $(p \times r)$ matrix of the top $r$ principal components (in this case $r = 200$).
+
+``` {r pca-visualisation, fig.cap = "Visualisation of Fashion MNIST images with 200 principal components"}
+
+# Choose number of principal components
+num_pc <- 200
+
+# Extract U as rotation matrix from PCA analysis
+mnist_U <- matrix(fashion_pca$rotation[,1:num_pc], ncol = num_pc)
+
+# Extract XU as principal components from PCA analysis
+mnist_XU <- matrix(fashion_pca$x[,1:num_pc], ncol = num_pc)
+
+# Calculate column means of X
+xbar <- colMeans(fashion_mnist %>% select(-label, -Item))
+
+# Create matrix of column means for each observation
+xbar <- matrix(rep(xbar, 2000), byrow = TRUE, nrow = 2000)
+
+# Reconstruct original data
+X_recon <- data.frame(pixel = matrix(xbar + (mnist_XU %*% t(mnist_U)), ncol = 784))
+
+# Tidy to replace periods with spaces
+names(X_recon) <- gsub(x = names(X_recon),
+                       pattern = "\\.",
+                       replacement = " ")
+
+# Combine into data frame for visualisation
+mnist_pc <- bind_cols(Item = fashion_mnist$Item, pixel = X_recon)
+
+view(mnist_pc) # View reconstructed PCA data
+
+```
+
+As we can see, the approximated images are very good representations of the originals, which is to be expected given that the 200 principal components explain roughly 95% of the variance in the original pixel data.
+
+We can also use PCA to visualise the original high-dimensional data in two dimensions to see if any clusters are clearly visible, for example, which helps give an indication of how classification algorithms might perform on the two-dimensional data.
+
+``` {r pca-2d, fig.cap = "Projection of original Fashion MNIST data along first two principal components"}
+
+pc_1 <- fashion_pca$x[,1] # Extract first principal component
+pc_2 <- fashion_pca$x[,2] # Extract second principal component
+
+# Combine into data frame for visualisation
+pca_2d <- data.frame(Item = as.factor(fashion_mnist$Item), pc_1, pc_2)
+
+# Visualise as scatter plot
+ggplot(pca_2d, aes(x = pc_1, y = pc_2, col = Item)) +
+  geom_point(size = 1)
+
+```
+In Figure \@ref(fig:pca-2d), we see some separation between images of Trousers and the rest of the dataset, and separation of a combined group of Sneakers & Sandals and Boots & Bags versus the rest of the dataset. However, it there is no clear separation within these combined clusters or between other item types in the wider dataset.
+
+Let's see if the t-SNE analysis can produce better clusters.
+
+## t-SNE
+
+t-SNE or t-distributed stochastic neighbour embedding is a method introduced by (Van der Maaten & Hinton, 2008). t-SNE aims to preserve similarity measures between high-dimensional and low-dimensional space by treating the probability of observations being close together as a random event subject to a probability distribution in high-dimensional and low-dimensional space, respectively, and then minimising the Kullback-Leibler divergence between the two distributions. Therefore, the similarity of observations in high-dimensional space is preserved when projecting observations into a lower dimension.
+
+Mathematically, the probability of point $\mathbf{x}_{j}$ being chosen as a neighbour to point $\mathbf{x}_{i}$ given that $\mathbf{x}_{i}$ is fixed is modelled using a Gaussian kernel:
+
+\[ p_{j|i} = \frac{\frac{1}{\sigma_i \sqrt{2\pi}}e^\frac{-d_{ij}^2}{2\sigma_{i}^2}}{\frac{1}{\sigma_{i}\sqrt{2\pi}}e^\frac{-d_{i1}^2}{2\sigma_{i}^2} +...+ \frac{1}{\sigma_{i}\sqrt{2\pi}}e^\frac{-d_{ik}^2}{2\sigma_{i}^2}} \]
+
+where $d_{ij} = ||\mathbf{x}_{i} - \mathbf{x}_{j}||_{2}$ and $p_{j|i}$ simplifies to:
+
+\[ p_{j|i} = \frac{\frac{1}{\sigma_i \sqrt{2\pi}}e^\frac{-d_{ij}^2}{2\sigma_{i}^2}}{\frac{1}{\sigma_{i}\sqrt{2\pi}}\sum_{k\neq i} e^\frac{-d_{ik}^2}{2\sigma_{i}^2}} = \frac{e^{\frac{-d_{ij}^2}{2\sigma_{i}^2}}}{\sum_{k \neq i} e^{\frac{-d_{ik}^2}{2\sigma_{i}^2}}} \]
+
+Note: technically we are not limited to a Gaussian kernel and we could also model using a uniform distribution, for example.
+
+Effectively, the probability of point $\mathbf{x}_{j}$ being chosen as a neighbour given we are at point $\mathbf{x}_{i}$ is equivalent to the probability of $\mathbf{x}_{j}$ being selected based on a normal distribution centred at $\mathbf{x}_{i}$ divided by the sum of the probability of all points being selected as the neighbour of $\mathbf{x}_{i}$ based on the same normal distribution. Given that $d_{ij}$ is the Euclidean distance between points $\mathbf{x}_{i}$ and $\mathbf{x}_{j}$, this results in points that are closer together having a higher probability of being chosen as neighbours, relative to all other points being considered.
+
+Given that the standard deviation $\sigma_{i}$ varies with $i$, $p_{j|i}$ is an asymmetric similarity measure (i.e. $p_{j|i} \neq p_{i|j}$). The *perplexity* of the distribution is a hyperparameter that is chosen at initialisation of the t-SNE algorithm and, roughly speaking, can be thought of as the number of neighbours each point is expected to have. More formally, it is related to the entropy of the distribution which, in turn, is a function of the standard deviation $\sigma_{i}$ for each point $\mathbf{x_{i}}$. As such, for a given perplexity value, $\sigma_{i}$ is larger for points in regions where the density of data points is lower and vice versa.
+
+This can be shown visually using \@ref(fig:mvt-norm), where we see two clearly separated clusters containing 1 and 2 observations, respectively. Considering the orange point in the "circle" cluster and the purple point in the "triangle" cluster, it is obvious that there will be significant differences in the Euclidean distance between the point in the triangle cluster and a point in the circle cluster and the Euclidean distance between both points in the circle cluster. 
+
+``` {r mvt-norm, fig.cap = "Example of asymmetric similarity measure"}
+
+library(mvtnorm)
+
+# Generate data points from multivariate normal distributions
+
+set.seed(123)
+cluster1 <- data.frame(rmvnorm(2, mean = rep(5, 2), sigma = 4*diag(2)))
+
+set.seed(123)
+cluster2 <- data.frame(rmvnorm(1, mean = rep(40, 2), sigma = diag(2)))
+
+# Visualise as scatter plot
+
+ggplot() +
+  geom_point(data = cluster1, aes(x=X1, y=X2), shape = 21, fill = "orange", size = 2) +
+  geom_point(data = cluster2, aes(x=X1, y=X2), shape = 24, fill = "purple", size = 2) +
+  xlim(0, 50) +
+  ylim(0, 50) +
+  labs(x = "X", y = "Y")
+
+```
+
+From the triangle point's perspective (i.e. point $\mathbf{x}_{i}$), $p_{j|i}$ will show the nearest point in the circle cluster as being the most likely neighbour (let's assume $p_{j|i} = 0.6$ in this case). However, for that same point within the circle cluster (i.e. point $\mathbf{x}_{j}$) the most likely neighbour will be the other point within the circle cluster and, given the large distance between the circle and triangle clusters, the probability of selecting point $\mathbf{x}_{i}$ as its neighbour will be much smaller (let's say $p_{i|j} = 0.1$, for example). Therefore, $p_{j|i} \neq p_{i|j}$ and we need to create a symmetric similarity measure by defining:
+
+\[ p_{ij} = \frac{p_{j|i} + p_{i|j}}{2N} \]
+
+where the $2N$ is a scaling factor based on the total number of points $N$ to ensure that $\sum_{i,j} p_{ij} = 1$.
+
+We then also define the probability of points $\mathbf{y}_{i}$ and $\mathbf{y}_{j}$ being selected as neighbours in the lower dimensional space as:
+
+\[ q_{ij} = \frac{(1 + ||\mathbf{y}_{i} - \mathbf{y}_{j}||_{2}^{2})^{-1}}{\sum_{k \neq l} (1 + ||\mathbf{y}_{k} - \mathbf{y}_{l}||_{2}^{2})^{-1}} \]
+
+where $q_{ij}$ is a heavy-tailed Student t-distribution with one degree of freedom, which is equivalent to a Cauchy distribution.
+
+The locations of points $\mathbf{y}_{i}$ are then determined by minimising the Kullback-Leibler divergence of distribution $P(\mathbf{x})$ and $Q(\mathbf{y})$:
+
+\[ KL (P || Q) = \sum_{i \neq j} p_{ij} \log \frac{p_{ij}}{q_{ij}}\]
+
+The minimisation is achieved via gradient descent according to the following steps:
+
+1. Calculate the symmetric similarities $p_{ij}$ for all pairs of points $\mathbf{x}_{i}$ and $\mathbf{x}_{j}$
+2. Choose a random solution for the location of each $\mathbf{y}_{i}$
+3. Calculate the similarities $q_{ij}$ for all pairs of points $\mathbf{y}_{i}$ and $\mathbf{y}_{j}$
+4. Calculate the gradient of the cost function (KL divergence)
+5. Update the solution for the location of each $\mathbf{y}_{i}$
+6. Repeat step 4 and 5 until convergence
+
+Note: In practice we would set a maximum number of iterations such that the repetition of steps 4 and 5 would stop once the maximum number of iterations is reached (at which point convergence will have hopefully occurred or the maximum number of iterations can be increased).
+
+We can carry out t-SNE analysis in R using the `Rtsne` package. Here we choose a perplexity value of 35 as it produces a reasonably good visualisation but we could use cross-validation to select the optimum value.
+
+``` {r tsne-vis, fig.cap = "Two-dimensional projection of Fashion MNIST data using t-SNE analysis"}
+
+library(Rtsne)
+
+# Perform t-SNE analysis
+set.seed(123)
+mnist_tsne <- Rtsne(fashion_mnist %>% select(-label, -Item), 
+                    dims = 2, 
+                    perplexity = 35, 
+                    verbose = FALSE, 
+                    max_iter = 5000)
+
+# Extract dimension components from t-SNE analysis for 2D visualisation
+mnist_tsne_2d <- data.frame(Item = fashion_mnist$Item, 
+                            x = mnist_tsne$Y[,1],
+                            y = mnist_tsne$Y[,2])
+
+# Visualise as scatter plot
+ggplot(mnist_tsne_2d, aes(x = x, y = y, col = Item)) +
+  geom_point(size = 1)
+
+```
+
+In Figure \@ref(fig:tsne-vis) we see a very clear separation of Bag items from Boots, compared to Figure \@ref(fig:pca-2d), and the footwear items (Sneakers, Sandals and Boots) are located close together with Boots clearly separated from the other items and better separation between Sneakers and Sandals. In addition we see better clustering of Trousers, Dresses and T-shirts relative to other items of clothing. However, we do not see much improvement in the separation of Coats, Pullovers and Shirts which is to be expected given they are all items worn on the torso with long sleeves. Despite the lack of improvement in this particular area, it is clear that the clusters in Figure \@ref(fig:tsne-vis) are much better defined than in Figure \@ref(fig:pca-2d) and we would expect a non-linear classification model (e.g. Quadratic Discriminant Analysis) fitted to the two components produced by our t-SNE analysis to yield a higher degree of accuracy.
+
+## References
+
+Wickham et al., (2019). *Welcome to the tidyverse*. Journal of Open Source Software, 4(43), 1686, https://doi.org/10.21105/joss.01686.
+
+Alan Genz, Frank Bretz, Tetsuhisa Miwa, Xuefei Mi, Friedrich Leisch, Fabian Scheipl, Torsten Hothorn (2021). *mvtnorm: Multivariate Normal and t Distributions*. R package version 1.1-3. URL http://CRAN.R-project.org/package=mvtnorm.
+
+Alan Genz, Frank Bretz (2009). *Computation of Multivariate Normal and t Probabilities*. Lecture Notes in Statistics, Vol. 195., Springer-Verlag, Heidelberg. ISBN 978-3-642-01688-2.
+
+L.J.P. van der Maaten and G.E. Hinton (2008). *Visualizing High-Dimensional Data Using t-SNE*. Journal of Machine Learning Research 9(Nov):2579-2605.
+
+L.J.P. van der Maaten (2014). *Accelerating t-SNE using Tree-Based Algorithms*. Journal of Machine Learning Research 15(Oct):3221-3245.
+
+Jesse H. Krijthe (2015). *Rtsne: T-Distributed Stochastic Neighbor Embedding using a Barnes-Hut Implementation*, URL: https://github.com/jkrijthe/Rtsne.
