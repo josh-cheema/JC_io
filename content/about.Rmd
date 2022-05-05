@@ -1,0 +1,18 @@
+---
+title: "About Me"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+I'm an aspiring Software/Machine Learning Engineer interested in nearly everything Tech-related, currently studying towards an MSc in Machine Learning & Data Science at Imperial College London.
+
+If you're working on an interesting problem in this space and are looking for help, it would be great to hear from you!
+
+Previously, I received an MEng in Engineering Science from Oxford University and spent the 7+ years after graduating in Interest Rate Derivatives Sales & Trading in the City of London.
+
+Outside of work and school, I endure being a Manchester United fan and enjoy participating in Data/Hackathons alongside working on personal projects, which I'll hopefully be able to share on this blog when they're good enough.
+
+Thanks for visiting! 🙌
