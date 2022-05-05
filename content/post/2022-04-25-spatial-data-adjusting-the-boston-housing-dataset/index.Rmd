@@ -131,7 +131,7 @@ Where centroid is defined as below for a finite set of $k$ points $\mathbf{x}_{1
 
 i.e. the centroid will be a two-dimensional vector representing the average of the longitude ($x$ coordinate) and latitude ($y$ coordinate) values.
 
-``` {r correct centroids, echo = FALSE}
+``` {r correct centroids, echo = TRUE}
 
 # Compute centroids of the incorrect locations and distances from centroid in
 # each town.
