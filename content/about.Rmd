@@ -7,13 +7,13 @@ output: html_document
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-I'm an aspiring Software/Machine Learning Engineer interested in nearly everything Tech-related, currently studying towards an MSc in Machine Learning & Data Science at Imperial College London.
+I'm a postgraduate student interested in nearly everything in Tech and Finance, currently studying towards an MSc in Machine Learning & Data Science at Imperial College London.
 
 If you're working on an interesting problem in this space and are looking for help, it would be great to hear from you!
 
 My tech stack: Python & R, experience with version control in Git/GitHub, database queries with SQL and beginner-level Java & C++. I also have some limited experience of using GCP (e.g. Google Maps API) and AWS (currently studying for certifications).
 
-Previously, I received an MEng in Engineering Science from Oxford University and spent the 7+ years after graduating in Interest Rate Derivatives Sales & Trading in the City of London.
+Previously, I received an MEng in Engineering Science from Oxford University and spent 7+ years in Derivatives Sales & Trading in the City of London.
 
 Outside of work and school, I endure being a Manchester United fan and enjoy participating in Data/Hackathons alongside working on personal projects, which I'll hopefully be able to share on this blog when they're good enough.
 
